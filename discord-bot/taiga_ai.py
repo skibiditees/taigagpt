@@ -185,7 +185,7 @@ class TaigaAI(commands.Cog):
         self._remember_user(message.author.id, user_text)
 
         prompt = (
-            f"{BASE_PERSONALITY}\n\n{self._traits()}\n\n"
+            f"{BASE_PERSONALITY}\n\n"
             f"Saved notes about {message.author.display_name} (newer corrections take priority):\n"
             f"{self._user_memory(message.author.id)}\n\n"
             "Recent channel conversation (oldest first):\n"
