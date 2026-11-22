@@ -119,10 +119,13 @@ class TaigaAI(commands.Cog):
                 pass
 
         now = time.monotonic()
-        if now - self.last_user[message.author.id] < USER_COOLDOWN:
-            return
-        if now - self.last_channel[message.channel.id] < CHANNEL_COOLDOWN:
-            return
+        # Direct replies to Taiga should always continue the conversation.
+        # Cooldowns only limit mentions/ambient replies, not an active reply thread.
+        if not replied_to_taiga:
+            if now - self.last_user[message.author.id] < USER_COOLDOWN:
+                return
+            if now - self.last_channel[message.channel.id] < CHANNEL_COOLDOWN:
+                return
         if not (mentioned or replied_to_taiga or random.random() < AMBIENT_CHANCE):
             return
 
