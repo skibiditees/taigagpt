@@ -120,7 +120,7 @@ class TaigaAI(commands.Cog):
     def _remember_user(self, user_id: int, content: str) -> None:
         """Keep a rolling, persistent memory of what a user tells Taiga."""
         text = content.strip()
-        if not text or re.search(r"(?i)(password|passcode|api[_ -]?key|secret token)\\s*[:=]", text):
+        if not text or re.search(r"(?i)(password|passcode|api[_ -]?key|secret token)\s*[:=]", text):
             return
         self.db.execute(
             "INSERT INTO user_memory(user_id, created, content) VALUES(?, ?, ?)",
@@ -189,7 +189,7 @@ class TaigaAI(commands.Cog):
             f"Saved notes about {message.author.display_name} (newer corrections take priority):\n"
             f"{self._user_memory(message.author.id)}\n\n"
             "Recent channel conversation (oldest first):\n"
-            f"{self._history(message.channel.id)}\\n\\n"
+            f"{self._history(message.channel.id)}\n\n"
             f"Reply to {message.author.display_name}'s latest message: {user_text}"
         )
         async with message.channel.typing():
