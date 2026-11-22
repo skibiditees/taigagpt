@@ -21,6 +21,16 @@ AMBIENT_CHANCE = float(os.getenv("TAIGA_AMBIENT_CHANCE", "0.008"))
 CHANNEL_COOLDOWN = int(os.getenv("TAIGA_CHANNEL_COOLDOWN", "55"))
 USER_COOLDOWN = int(os.getenv("TAIGA_USER_COOLDOWN", "18"))
 MAX_CONTEXT = int(os.getenv("TAIGA_CONTEXT_MESSAGES", "12"))
+KNOWLEDGE_PATH = Path(__file__).with_name("taiga_knowledge.md")
+
+
+def load_country_knowledge() -> str:
+    """Load the Republic of Taiga reference document if it is installed."""
+    try:
+        return KNOWLEDGE_PATH.read_text(encoding="utf-8")
+    except OSError:
+        print(f"[TaigaGPT] Country knowledge file not found: {KNOWLEDGE_PATH}")
+        return "No country reference document is currently available."
 
 BASE_PERSONALITY = """You are Taiga, a helpful, natural, straightforward Discord assistant.
 DEFAULT TONE:
@@ -193,6 +203,9 @@ class TaigaAI(commands.Cog):
 
         prompt = (
             f"{BASE_PERSONALITY}\n\n"
+            "OFFICIAL TAIGA COUNTRY REFERENCE (use this as the source of truth for Taiga facts; "
+            "do not invent missing details):\n"
+            f"{load_country_knowledge()}\n\n"
             f"Saved notes about {message.author.display_name} (newer corrections take priority):\n"
             f"{self._user_memory(message.author.id)}\n\n"
             "Recent channel conversation (oldest first):\n"
