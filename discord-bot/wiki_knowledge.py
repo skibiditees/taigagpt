@@ -123,50 +123,71 @@ class WikiKnowledge:
             print(f"[TaigaGPT] INSMP wiki sync failed: {type(exc).__name__}: {exc}")
 
     def _local_search(self, query: str, limit: int = 6) -> list[tuple[str, str]]:
-        words = re.findall(r"[\w-]{3,}", query.lower())[:8]
+        words = list(dict.fromkeys(re.findall(r"[\\w-]{3,}", query.lower())))[:12]
         if not words:
             return []
-        clauses = []
-        values: list[str] = []
-        for word in words:
-            clauses.append("(LOWER(title) LIKE ? OR LOWER(content) LIKE ?)")
-            values.extend((f"%{word}%", f"%{word}%"))
-        sql = "SELECT title, content FROM wiki_text WHERE " + " OR ".join(clauses)
-        sql += " ORDER BY CASE WHEN LOWER(title) LIKE ? THEN 0 ELSE 1 END, fetched DESC LIMIT ?"
-        values.extend((f"%{words[0]}%", limit))
-        return self.db.execute(sql, values).fetchall()
+        rows = self.db.execute("SELECT title, content FROM wiki_text").fetchall()
+        scored: list[tuple[int, str, str]] = []
+        for title, content in rows:
+            title_l = title.lower()
+            content_l = content.lower()
+            title_hits = sum(1 for word in words if word in title_l)
+            body_hits = sum(1 for word in words if word in content_l)
+            total_hits = title_hits + body_hits
+            # Avoid returning a page just because it contains one generic word.
+            required = 1 if len(words) == 1 else 2
+            if total_hits < required:
+                continue
+            scored.append((title_hits * 4 + body_hits, title, content))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [(title, content) for _, title, content in scored[:limit]]
 
     async def get_context(self, query: str) -> str:
-        """Search the live wiki, save matching pages and their first-level links, then retrieve text."""
+        """Search live wiki, save matching articles and linked articles, then return grounded excerpts."""
+        live_status = "LIVE SEARCH: failed"
         try:
             data = await self._request({
                 "action": "query", "list": "search",
-                "srsearch": query, "srnamespace": 0, "srlimit": 6,
+                "srsearch": query, "srnamespace": 0, "srlimit": 8,
             })
             hits = data.get("query", {}).get("search", [])
             titles = [hit["title"] for hit in hits if hit.get("title")]
-            pages = await self._fetch_titles(titles)
+            if titles:
+                pages = await self._fetch_titles(titles)
+                live_status = f"LIVE SEARCH: succeeded; found {len(titles)} matching page(s)"
+            else:
+                pages = []
+                live_status = "LIVE SEARCH: succeeded; the wiki returned no matching pages"
 
-            # Follow internal article links from matching pages and save those pages too.
+            # Follow internal article links from the matched pages and save their text too.
             linked_titles: list[str] = []
             for page in pages:
                 for link in page.get("links", []):
                     title = link.get("title")
                     if title and title not in titles and title not in linked_titles:
                         linked_titles.append(title)
-                    if len(linked_titles) >= 12:
+                    if len(linked_titles) >= 20:
                         break
-                if len(linked_titles) >= 12:
+                if len(linked_titles) >= 20:
                     break
             if linked_titles:
                 await self._fetch_titles(linked_titles)
         except Exception as exc:
-            print(f"[TaigaGPT] INSMP wiki search failed: {type(exc).__name__}: {exc}")
+            live_status = f"LIVE SEARCH ERROR: {type(exc).__name__}: {exc}"
+            print(f"[TaigaGPT] INSMP wiki search failed: {live_status}")
 
         rows = self._local_search(query, 6)
         if not rows:
-            return "No matching INSMP wiki text is saved yet."
+            return (
+                f"{live_status}\\n"
+                "NO VERIFIED WIKI EXCERPTS FOUND. Do not answer wiki-specific factual questions "
+                "from memory or guess. Tell the user the wiki search returned no usable page text."
+            )
         chunks = []
         for title, content in rows:
-            chunks.append(f"[{title}]\n{content[:2200]}")
-        return "\n\n".join(chunks)[:10000]
+            chunks.append(f"[WIKI PAGE: {title}]\\n{content[:2600]}")
+        return (
+            f"{live_status}\\n"
+            "The following are the only retrieved wiki excerpts available for this question.\\n\\n"
+            + "\\n\\n".join(chunks)[:10500]
+        )
