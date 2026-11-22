@@ -1,6 +1,7 @@
 """TaigaGPT Discord AI cog — discord.py + Google's Gemini API only."""
 from __future__ import annotations
 
+import asyncio
 import os
 import random
 import re
@@ -8,6 +9,8 @@ import sqlite3
 import time
 from collections import defaultdict
 from pathlib import Path
+
+from wiki_knowledge import WikiKnowledge
 
 import discord
 from discord.ext import commands
@@ -87,10 +90,18 @@ class TaigaAI(commands.Cog):
         self.db.execute("""CREATE TABLE IF NOT EXISTS user_memory (
             user_id INTEGER, created REAL, content TEXT)""")
         self.db.commit()
+        self.wiki = WikiKnowledge(self.db)
+        self.wiki_sync_task = None
         self.last_channel: dict[int, float] = defaultdict(float)
         self.last_user: dict[int, float] = defaultdict(float)
 
+    async def cog_load(self):
+        # Build a persistent text-only index of the wiki in the background.
+        self.wiki_sync_task = asyncio.create_task(self.wiki.sync_all())
+
     def cog_unload(self):
+        if self.wiki_sync_task and not self.wiki_sync_task.done():
+            self.wiki_sync_task.cancel()
         self.db.close()
 
     def _traits(self) -> str:
@@ -201,11 +212,14 @@ class TaigaAI(commands.Cog):
         self._remember(message.channel.id, message.author.display_name, user_text)
         self._remember_user(message.author.id, user_text)
 
+        wiki_context = await self.wiki.get_context(user_text)
         prompt = (
             f"{BASE_PERSONALITY}\n\n"
             "OFFICIAL TAIGA COUNTRY REFERENCE (use this as the source of truth for Taiga facts; "
             "do not invent missing details):\n"
             f"{load_country_knowledge()}\n\n"
+            "INSMP WIKI TEXT (retrieved from the live wiki and locally saved text; cite page titles when useful):\n"
+            f"{wiki_context}\n\n"
             f"Saved notes about {message.author.display_name} (newer corrections take priority):\n"
             f"{self._user_memory(message.author.id)}\n\n"
             "Recent channel conversation (oldest first):\n"
